@@ -1,71 +1,64 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
-const isDev = require('electron-is-dev');
+const dotenv = require('dotenv');
 
+const isPackaged = app.isPackaged;
 let pythonProcess = null;
 
 function createPythonProcess() {
-  // Use process.resourcesPath in production
-  let backendExe;
-  // if (app.isPackaged) {
-  //   backendExe = path.join(process.resourcesPath, 'python', 'app.exe');
-  // } else {
-  //   backendExe = path.join(__dirname, '..', 'python', 'dist', 'app.exe');
-  // }
+  const pythonExePath = isPackaged
+    ? path.join(process.resourcesPath, 'app', 'backend_dist', 'app.exe')
+    : path.join(__dirname, '..', 'backend_dist', 'app.exe');
 
-  console.log('Starting Python process...');
-  backendExe = path.join(__dirname, '..', 'python', 'dist', 'app.exe');
+  const envPath = isPackaged
+    ? path.join(process.resourcesPath, 'app', 'backend_dist', '.env')
+    : path.join(__dirname, '..', 'python', '.env');
 
-  pythonProcess = spawn(backendExe, [], {
-    cwd: path.dirname(backendExe),
-    stdio: 'inherit'
+  console.log(`[Electron] Development mode: ${!isPackaged}`);
+  console.log(`[Electron] Python executable path: ${pythonExePath}`);
+  console.log(`[Electron] .env path: ${envPath}`);
+
+  const envVars = dotenv.config({ path: envPath }).parsed || {};
+
+  console.log('[Electron] Starting Python backend...');
+
+  pythonProcess = spawn(pythonExePath, [], {
+    env: { ...process.env, ...envVars }
   });
 
-  pythonProcess.on('error', (err) => {
-    console.error('Failed to start Python process.', err);
-  });
-
+  pythonProcess.stdout.on('data', (data) => console.log(`[Python Backend]: ${data.toString()}`));
+  pythonProcess.stderr.on('data', (data) => console.error(`[Python Backend ERR]: ${data.toString()}`));
   pythonProcess.on('close', (code) => {
-    console.log(`Python process exited with code ${code}`);
+    console.log(`[Electron] Python backend process exited with code ${code}`);
+    pythonProcess = null;
   });
 }
 
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+  const mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    }
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
   });
 
-  let indexPath;
-  if (app.isPackaged) {
-    indexPath = path.join(process.resourcesPath, 'renderer', 'dist', 'index.html');
+  if (isPackaged) {
+    // This is the corrected path for the packaged application.
+    mainWindow.loadFile(path.join(__dirname, 'renderer', 'dist', 'index.html'));
   } else {
-    indexPath = path.join(__dirname, '..', 'renderer', 'dist', 'index.html');
-  }
-  win.loadFile(indexPath);
-
-  if (isDev) {
-    win.webContents.openDevTools();
+    // This loads from the Vite dev server for `npm start`.
+    // You must run the Vite dev server from the `desktop/renderer` directory.
+    mainWindow.loadURL('http://localhost:5173'); 
+    mainWindow.webContents.openDevTools();
   }
 }
 
-app.whenReady().then(() => {
-  console.log('App is ready');
-  console.log('Starting Python backend...');
+app.on('ready', () => {
   createPythonProcess();
-  console.log('Creating browser window...');
   createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
 });
 
 app.on('window-all-closed', () => {
@@ -75,9 +68,8 @@ app.on('window-all-closed', () => {
 });
 
 app.on('quit', () => {
-  console.log('Terminating Python process...');
   if (pythonProcess) {
-    pythonProcess.kill('SIGTERM');
+    pythonProcess.kill();
     pythonProcess = null;
   }
 });
