@@ -45,26 +45,14 @@ load_dotenv(dotenv_path=env_path)
 
 # Initialize OpenAI client properly
 from openai import OpenAI
-import httpx
-
 import os
-# print(os.environ.get("SSL_CERT_FILE"))
-# os.environ.pop("SSL_CERT_FILE", None)
-# print(os.environ.get("SSL_CERT_FILE"))
 
-# Create custom HTTP client to handle SSL issues
-custom_http_client = httpx.Client(
-    verify=False,  # Disable SSL verification for development
-    timeout=30.0
-)
 
-# Initialize the OpenAI client with custom HTTP client
-# --- CRITICAL FIX: Changed api_key to load from your .env file ---
+# Initialize OpenAI client properly using its default, robust settings.
+# It will handle SSL verification correctly.
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    http_client=custom_http_client
+    api_key=os.getenv("OPENAI_API_KEY")
 )
-# -----------------------------------------------------------------
 
 
 # Initialize FastAPI
@@ -270,7 +258,8 @@ async def transcribe(file: UploadFile = File(...)):
             tmp.write(await file.read())
             path = tmp.name
         
-        result = transcribe_audio(path)
+        # Pass the initialized client to the function
+        result = transcribe_audio(client, path)
         os.remove(path)
         
         return {"transcript": result}
